@@ -1,0 +1,63 @@
+name: Build and Deploy Tic Tac Toe App
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-push:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and Push Docker Image
+        run: |
+          docker build -t anishaaaa21/tic-tac-toe:latest .
+          docker push anishaaaa21/tic-tac-toe:latest
+
+  deploy:
+    name: Deploy to EC2
+    needs: build-and-push
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_IP }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          script: |
+            echo "Checking Docker installation..."
+            if ! command -v docker &> /dev/null; then
+              echo "Docker not found. Installing Docker..."
+              curl -fsSL https://get.docker.com -o get-docker.sh
+              sh get-docker.sh
+              sudo usermod -aG docker ${{ secrets.EC2_USER }}
+              
+            else
+              echo "Docker is already installed."
+            fi
+
+            echo "Pulling latest image..."
+            docker pull anishaaaa21/tic-tac-toe:latest
+
+            echo "Stopping and removing old container..."
+            docker stop tictactoe || true
+            docker rm tictactoe || true
+
+            echo "Running new container..."
+            docker run -d --name tictactoe -p 8000:8000 anishaaaa21/tic-tac-toe:latest
